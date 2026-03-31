@@ -25,12 +25,21 @@ class Config:
     # Redis cache (optional — app runs without it)
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    # Open-Meteo API endpoints
+    # Open-Meteo API key (commercial subscription — leave blank for free tier)
+    OPENMETEO_API_KEY = os.getenv("OPENMETEO_API_KEY", "")
+
+    # Open-Meteo API endpoints (customer URLs when API key is set)
+    OPENMETEO_FORECAST_URL = os.getenv(
+        "OPENMETEO_FORECAST_URL",
+        "https://customer-api.open-meteo.com/v1/forecast" if os.getenv("OPENMETEO_API_KEY") else "https://api.open-meteo.com/v1/forecast"
+    )
     OPENMETEO_MARINE_URL = os.getenv(
-        "OPENMETEO_MARINE_URL", "https://marine-api.open-meteo.com/v1/marine"
+        "OPENMETEO_MARINE_URL",
+        "https://customer-marine-api.open-meteo.com/v1/marine" if os.getenv("OPENMETEO_API_KEY") else "https://marine-api.open-meteo.com/v1/marine"
     )
     OPENMETEO_ENSEMBLE_URL = os.getenv(
-        "OPENMETEO_ENSEMBLE_URL", "https://ensemble-api.open-meteo.com/v1/ensemble"
+        "OPENMETEO_ENSEMBLE_URL",
+        "https://customer-ensemble-api.open-meteo.com/v1/ensemble" if os.getenv("OPENMETEO_API_KEY") else "https://ensemble-api.open-meteo.com/v1/ensemble"
     )
 
     # API tuning

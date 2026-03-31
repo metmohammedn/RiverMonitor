@@ -92,12 +92,15 @@ def create_app() -> Dash:
     try:
         from src.data.api_client import init_api_client
         init_api_client(
+            forecast_url=config.OPENMETEO_FORECAST_URL,
             marine_url=config.OPENMETEO_MARINE_URL,
             ensemble_url=config.OPENMETEO_ENSEMBLE_URL,
+            api_key=config.OPENMETEO_API_KEY,
             timeout=config.API_TIMEOUT,
             max_connections=config.API_MAX_CONNECTIONS,
         )
-        logger.info("API client initialized (tide + ensemble forecasts)")
+        api_tier = "commercial" if config.OPENMETEO_API_KEY else "free"
+        logger.info("API client initialized (%s tier)", api_tier)
     except Exception as e:
         logger.warning("API client initialization failed: %s", e)
 

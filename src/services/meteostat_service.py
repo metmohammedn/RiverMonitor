@@ -53,6 +53,8 @@ def fetch_recent_observations(
 
     try:
         import httpx
+        from config import get_config
+        config = get_config()
 
         params = {
             "latitude": lat,
@@ -62,8 +64,10 @@ def fetch_recent_observations(
             "forecast_hours": 0,
             "timezone": "GMT",
         }
+        if config.OPENMETEO_API_KEY:
+            params["apikey"] = config.OPENMETEO_API_KEY
         resp = httpx.get(
-            "https://api.open-meteo.com/v1/forecast",
+            config.OPENMETEO_FORECAST_URL,
             params=params,
             timeout=15,
         )

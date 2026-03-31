@@ -21,14 +21,18 @@ class OpenMeteoClient:
 
     def __init__(
         self,
+        forecast_url: str = "https://api.open-meteo.com/v1/forecast",
         marine_url: str = "https://marine-api.open-meteo.com/v1/marine",
         ensemble_url: str = "https://ensemble-api.open-meteo.com/v1/ensemble",
+        api_key: str = "",
         timeout: int = 30,
         max_connections: int = 10,
         max_retries: int = 3,
     ):
+        self._forecast_url = forecast_url
         self._marine_url = marine_url
         self._ensemble_url = ensemble_url
+        self._api_key = api_key
         self._max_retries = max_retries
 
         self._client = httpx.Client(
@@ -60,7 +64,9 @@ class OpenMeteoClient:
         await self._async_client.aclose()
 
     def _request(self, url: str, params: dict) -> dict:
-        """Make a GET request with retry logic."""
+        """Make a GET request with retry logic. Appends API key if configured."""
+        if self._api_key:
+            params = {**params, "apikey": self._api_key}
         for attempt in range(self._max_retries):
             try:
                 response = self._client.get(url, params=params)
@@ -84,7 +90,9 @@ class OpenMeteoClient:
                 time.sleep(2 ** attempt)
 
     async def _async_request(self, url: str, params: dict) -> dict:
-        """Make an async GET request with retry logic."""
+        """Make an async GET request with retry logic. Appends API key if configured."""
+        if self._api_key:
+            params = {**params, "apikey": self._api_key}
         for attempt in range(self._max_retries):
             try:
                 response = await self._async_client.get(url, params=params)
@@ -226,7 +234,7 @@ class OpenMeteoClient:
         Returns (DataFrame, grid_lat, grid_lon) where grid_lat/grid_lon are
         the actual coordinates Open-Meteo snapped to on its model grid.
         """
-        forecast_url = "https://api.open-meteo.com/v1/forecast"
+        forecast_url = self._forecast_url
         params = {
             "latitude": lat,
             "longitude": lon,
@@ -270,16 +278,20 @@ _client: Optional[OpenMeteoClient] = None
 
 
 def init_api_client(
-    marine_url: str,
+    forecast_url: str = "https://api.open-meteo.com/v1/forecast",
+    marine_url: str = "https://marine-api.open-meteo.com/v1/marine",
     ensemble_url: str = "https://ensemble-api.open-meteo.com/v1/ensemble",
+    api_key: str = "",
     timeout: int = 30,
     max_connections: int = 10,
 ) -> OpenMeteoClient:
     """Initialize the global API client."""
     global _client
     _client = OpenMeteoClient(
+        forecast_url=forecast_url,
         marine_url=marine_url,
         ensemble_url=ensemble_url,
+        api_key=api_key,
         timeout=timeout,
         max_connections=max_connections,
     )
