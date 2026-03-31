@@ -504,16 +504,29 @@ def layout():
                                     leftSection=DashIconify(icon="tabler:wind", width=14),
                                     styles=_INPUT_STYLE,
                                 ),
+                                dmc.NumberInput(
+                                    id="river-details-river-threshold",
+                                    label="River Level (m)",
+                                    value=0.5,
+                                    min=0, max=30, step=0.1,
+                                    decimalScale=2,
+                                    w={"base": "100%", "xs": 140},
+                                    leftSection=DashIconify(icon="tabler:ripple", width=14),
+                                    styles=_INPUT_STYLE,
+                                ),
                             ]),
-                            dmc.Switch(
-                                id="river-details-show-obs",
-                                label="Show Observations",
-                                checked=True,
-                                color="cyan",
-                                size="sm",
-                                styles={"label": {"color": "#94a3b8", "cursor": "pointer"}},
-                            ),
-                            html.Div(id="river-details-obs-info", style={"display": "inline"}),
+                            dmc.Group(gap="md", align="center", wrap="wrap", children=[
+                                dmc.Switch(
+                                    id="river-details-show-obs",
+                                    label="Show Observations",
+                                    checked=True,
+                                    color="cyan",
+                                    size="sm",
+                                    styles={"label": {"color": "#94a3b8", "cursor": "pointer"}},
+                                ),
+                                html.Div(id="river-details-obs-info", style={"display": "inline"}),
+                                html.Div(id="river-details-river-threshold-warning"),
+                            ]),
                         ]),
                     ),
                     html.Div(id="river-station-metrics"),
@@ -1121,6 +1134,67 @@ def render_details_precipitation(sensor_id, rain_threshold):
     return style, fig
 
 
+# Set river threshold default when station changes + show warning
+@callback(
+    Output("river-details-river-threshold", "value"),
+    Output("river-details-river-threshold-warning", "children"),
+    Input("river-station-select", "value"),
+    Input("river-details-river-threshold", "value"),
+    prevent_initial_call=True,
+)
+def update_river_threshold_default(sensor_id, current_value):
+    trigger = ctx.triggered_id
+
+    # Look up station's flood thresholds
+    minor_val = None
+    has_thresholds = False
+    if sensor_id:
+        try:
+            from src.services.river_service import get_latest_river_levels
+            df = get_latest_river_levels()
+            row = df[df["sensor"] == sensor_id]
+            if not row.empty:
+                for level in ("Minor", "Moderate", "Major"):
+                    val = row.iloc[0].get(level)
+                    if pd.notna(val) and val > 0:
+                        if minor_val is None:
+                            minor_val = float(val)
+                        has_thresholds = True
+        except Exception:
+            pass
+
+    # If station just changed, set default
+    if trigger == "river-station-select":
+        default = minor_val if minor_val is not None else 0.5
+        label = ""
+        if not has_thresholds:
+            label = dmc.Text(
+                "No flood thresholds defined for this station — default 0.5m",
+                size="xs", c="dimmed", fs="italic",
+            )
+        return default, label
+
+    # If user changed the threshold, check against Minor
+    warning = html.Div()
+    try:
+        user_val = float(current_value) if current_value not in (None, "", " ") else None
+    except (TypeError, ValueError):
+        user_val = None
+
+    if user_val is not None and minor_val is not None and user_val > minor_val:
+        warning = dmc.Text(
+            f"Threshold ({user_val:.2f}m) is above Minor flood level ({minor_val:.2f}m)",
+            size="xs", c="#f59e0b", fs="italic",
+        )
+    elif not has_thresholds:
+        warning = dmc.Text(
+            "No flood thresholds defined — using custom value",
+            size="xs", c="dimmed", fs="italic",
+        )
+
+    return no_update, warning
+
+
 # Wind/Gust ensemble forecasts (Details tab)
 @callback(
     Output("river-details-wind-section", "style"),
@@ -1133,10 +1207,11 @@ def render_details_precipitation(sensor_id, rain_threshold):
     Input("river-details-wind-threshold", "value"),
     Input("river-details-gust-threshold", "value"),
     Input("river-details-rain-threshold", "value"),
+    Input("river-details-river-threshold", "value"),
     Input("river-details-show-obs", "checked"),
     prevent_initial_call=True,
 )
-def render_details_wind(sensor_id, wind_threshold, gust_threshold, rain_threshold, show_obs):
+def render_details_wind(sensor_id, wind_threshold, gust_threshold, rain_threshold, river_threshold_input, show_obs):
     from src.components.river_charts import (
         create_wind_exceedance_chart, create_wind_ensemble_chart,
         create_gust_chart, add_weather_windows, empty_chart,
@@ -1226,33 +1301,29 @@ def render_details_wind(sensor_id, wind_threshold, gust_threshold, rain_threshol
     except Exception:
         pass
 
-    # Get river level + flood thresholds for this station (if available)
+    # Get current river level for this station
     river_level = None
-    river_threshold = None
-    river_threshold_name = None
     try:
         from src.services.river_service import get_latest_river_levels
         df_latest = get_latest_river_levels()
         station_row = df_latest[df_latest["sensor"] == sensor_id]
         if not station_row.empty:
-            row = station_row.iloc[0]
-            river_level = row.get("RealValue")
-            # Use the lowest defined flood threshold
-            for level_name in ("Minor", "Moderate", "Major"):
-                val = row.get(level_name)
-                if pd.notna(val) and val > 0:
-                    river_threshold = float(val)
-                    river_threshold_name = f"{level_name} Flood ({val:.2f}m)"
-                    break
+            river_level = station_row.iloc[0].get("RealValue")
     except Exception:
         pass
 
-    # Weather windows (includes river level if thresholds are defined)
+    # Parse user's river threshold
+    try:
+        rv_thresh = float(river_threshold_input) if river_threshold_input not in (None, "", " ") else None
+    except (TypeError, ValueError):
+        rv_thresh = None
+
+    # Weather windows (uses user's river threshold)
     ww_result = calculate_weather_windows(
         wind_data, precip_dfs, w_thresh, g_thresh, r_thresh,
         river_level=float(river_level) if river_level is not None and pd.notna(river_level) else None,
-        river_threshold=river_threshold,
-        river_threshold_name=river_threshold_name,
+        river_threshold=rv_thresh,
+        river_threshold_name=f"River Level ({rv_thresh:.2f}m)" if rv_thresh else None,
     )
     windows = ww_result.get("windows", [])
 
@@ -1331,7 +1402,7 @@ def render_details_wind(sensor_id, wind_threshold, gust_threshold, rain_threshol
             logger.warning("Meteostat overlay failed: %s", e)
 
     # Weather window summary card
-    ww_summary = _build_weather_window_summary(ww_result, w_thresh, g_thresh, r_thresh)
+    ww_summary = _build_weather_window_summary(ww_result, w_thresh, g_thresh, r_thresh, rv_thresh)
 
     return (
         {"display": "block"},
@@ -1343,7 +1414,7 @@ def render_details_wind(sensor_id, wind_threshold, gust_threshold, rain_threshol
     )
 
 
-def _build_weather_window_summary(ww_result, wind_thresh, gust_thresh, rain_thresh):
+def _build_weather_window_summary(ww_result, wind_thresh, gust_thresh, rain_thresh, river_thresh=None):
     """Build a weather window summary card."""
     is_open = ww_result.get("is_open_now", False)
     windows = ww_result.get("windows", [])
@@ -1373,7 +1444,9 @@ def _build_weather_window_summary(ww_result, wind_thresh, gust_thresh, rain_thre
 
     # Threshold criteria text
     criteria = f"Wind < {wind_thresh} km/h | Gust < {gust_thresh} km/h | Rain < {rain_thresh} mm/hr"
-    if river_threshold_name:
+    if river_thresh is not None:
+        criteria += f" | River < {river_thresh:.2f}m"
+    elif river_threshold_name:
         criteria += f" | River < {river_threshold_name}"
     children.append(dmc.Text(criteria, size="xs", c="dimmed", mt=4))
 
