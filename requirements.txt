@@ -1,0 +1,15 @@
+dash>=2.17.0
+dash-mantine-components>=0.14.0
+dash-iconify>=0.1.2
+dash-leaflet>=1.0.15
+pandas>=2.2.0
+numpy>=1.26.0
+plotly>=5.18.0
+httpx>=0.27.0
+redis>=5.0.0
+geopandas>=0.14.0
+fiona>=1.9.0
+python-dotenv>=1.0.0
+pytz>=2024.1
+gunicorn>=22.0.0
+werkzeug>=3.0.0
