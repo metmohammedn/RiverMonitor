@@ -1226,8 +1226,34 @@ def render_details_wind(sensor_id, wind_threshold, gust_threshold, rain_threshol
     except Exception:
         pass
 
-    # Weather windows
-    ww_result = calculate_weather_windows(wind_data, precip_dfs, w_thresh, g_thresh, r_thresh)
+    # Get river level + flood thresholds for this station (if available)
+    river_level = None
+    river_threshold = None
+    river_threshold_name = None
+    try:
+        from src.services.river_service import get_latest_river_levels
+        df_latest = get_latest_river_levels()
+        station_row = df_latest[df_latest["sensor"] == sensor_id]
+        if not station_row.empty:
+            row = station_row.iloc[0]
+            river_level = row.get("RealValue")
+            # Use the lowest defined flood threshold
+            for level_name in ("Minor", "Moderate", "Major"):
+                val = row.get(level_name)
+                if pd.notna(val) and val > 0:
+                    river_threshold = float(val)
+                    river_threshold_name = f"{level_name} Flood ({val:.2f}m)"
+                    break
+    except Exception:
+        pass
+
+    # Weather windows (includes river level if thresholds are defined)
+    ww_result = calculate_weather_windows(
+        wind_data, precip_dfs, w_thresh, g_thresh, r_thresh,
+        river_level=float(river_level) if river_level is not None and pd.notna(river_level) else None,
+        river_threshold=river_threshold,
+        river_threshold_name=river_threshold_name,
+    )
     windows = ww_result.get("windows", [])
 
     # Per-model ensemble spread charts (accordion items)
@@ -1323,22 +1349,41 @@ def _build_weather_window_summary(ww_result, wind_thresh, gust_thresh, rain_thre
     windows = ww_result.get("windows", [])
     total_hours = ww_result.get("total_hours", 0)
     next_window = ww_result.get("next_window")
+    river_exceeded = ww_result.get("river_exceeded", False)
+    river_threshold_name = ww_result.get("river_threshold_name")
 
-    badge_color = "green" if is_open else "orange"
-    badge_text = "OPEN NOW" if is_open else "CLOSED"
+    if river_exceeded:
+        badge_color = "red"
+        badge_text = "CLOSED — RIVER LEVEL EXCEEDED"
+    else:
+        badge_color = "green" if is_open else "orange"
+        badge_text = "OPEN NOW" if is_open else "CLOSED"
 
     children = [
         dmc.Group(gap="sm", children=[
-            DashIconify(icon="tabler:shield-check" if is_open else "tabler:shield-x", width=20,
-                        color="#22c55e" if is_open else "#f59e0b"),
+            DashIconify(
+                icon="tabler:shield-check" if is_open and not river_exceeded else "tabler:shield-x",
+                width=20,
+                color="#22c55e" if is_open and not river_exceeded else ("#ef4444" if river_exceeded else "#f59e0b"),
+            ),
             dmc.Text("Weather Window", size="sm", fw=700, c="white"),
             dmc.Badge(badge_text, color=badge_color, variant="filled", size="sm"),
         ]),
-        dmc.Text(
-            f"Wind < {wind_thresh} km/h | Gust < {gust_thresh} km/h | Rain < {rain_thresh} mm/hr",
-            size="xs", c="dimmed", mt=4,
-        ),
     ]
+
+    # Threshold criteria text
+    criteria = f"Wind < {wind_thresh} km/h | Gust < {gust_thresh} km/h | Rain < {rain_thresh} mm/hr"
+    if river_threshold_name:
+        criteria += f" | River < {river_threshold_name}"
+    children.append(dmc.Text(criteria, size="xs", c="dimmed", mt=4))
+
+    if river_exceeded and river_threshold_name:
+        children.append(
+            dmc.Text(
+                f"River level currently exceeds {river_threshold_name} — all weather windows closed",
+                size="xs", c="#ef4444", mt=4,
+            )
+        )
 
     if windows:
         children.append(

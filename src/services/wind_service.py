@@ -171,12 +171,16 @@ def calculate_weather_windows(
     wind_thresh_kmh: float = 100,
     gust_thresh_kmh: float = 130,
     rain_thresh_mm: float = 10,
+    river_level: Optional[float] = None,
+    river_threshold: Optional[float] = None,
+    river_threshold_name: Optional[str] = None,
 ) -> Dict:
     """
     Identify safe weather windows where ALL conditions are met:
     - Ensemble median wind speed < wind_thresh
     - Ensemble max gust < gust_thresh
     - Max precipitation across models < rain_thresh
+    - River level < river_threshold (if both are provided)
 
     Uses ECMWF IFS as primary model for wind/gust.
     """
@@ -221,6 +225,19 @@ def calculate_weather_windows(
         rain_safe = pd.Series(True, index=df.index)
 
     # Combined safe mask
+    # River level condition (static — current level vs threshold)
+    if river_level is not None and river_threshold is not None:
+        river_safe = river_level < river_threshold
+        # Apply as a constant mask across all timesteps
+        if not river_safe:
+            # River is above threshold — no safe windows at all
+            return {
+                "windows": [], "total_hours": 0, "next_window": None,
+                "is_open_now": False,
+                "river_exceeded": True,
+                "river_threshold_name": river_threshold_name,
+            }
+
     safe_mask = wind_safe & gust_safe & rain_safe
 
     # Extract contiguous windows
