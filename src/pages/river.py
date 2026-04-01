@@ -507,7 +507,7 @@ def layout():
                                 dmc.NumberInput(
                                     id="river-details-river-threshold",
                                     label="River Level (m)",
-                                    value=0.5,
+                                    value=10,
                                     min=0, max=30, step=0.1,
                                     decimalScale=2,
                                     w={"base": "100%", "xs": 140},
@@ -1165,11 +1165,11 @@ def update_river_threshold_default(sensor_id, current_value):
 
     # If station just changed, set default
     if trigger == "river-station-select":
-        default = minor_val if minor_val is not None else 0.5
+        default = minor_val if minor_val is not None else 10
         label = ""
         if not has_thresholds:
             label = dmc.Text(
-                "No flood thresholds defined for this station — default 0.5m",
+                "No flood thresholds defined for this station — default 10m",
                 size="xs", c="dimmed", fs="italic",
             )
         return default, label
